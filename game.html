@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Emoji 劍客冒險 v15 - 最終優化版</title>
+    <title>Emoji 劍客冒險 v16 - 左右互換版</title>
     <style>
         body {
             margin: 0;
@@ -63,12 +63,12 @@
             padding: 0 10px;
         }
         
-        /* --- 修改：重新開始按鈕位置 (畫面下方中間) --- */
+        /* 重新開始按鈕 (稍微往上移，避免跟觸控按鈕打架) */
         #restartBtn {
             position: absolute;
-            bottom: 80px; /* 距離底部 80px，避免跟觸控按鈕重疊(如果有) */
+            bottom: 120px; /* 改為 120px */
             left: 50%;
-            transform: translateX(-50%); /* 水平置中 */
+            transform: translateX(-50%);
             padding: 15px 40px;
             font-size: 24px;
             font-weight: bold;
@@ -96,7 +96,7 @@
             left: 0;
             width: 100%;
             display: flex;
-            justify-content: space-between;
+            justify-content: space-between; /* 左右分開 */
             padding: 0 30px;
             box-sizing: border-box;
             pointer-events: none;
@@ -140,19 +140,20 @@
 
             <div id="touchControls">
                 <div class="control-group">
-                    <div class="touch-btn" id="btnLeft">⬅️</div>
-                    <div class="touch-btn" id="btnRight">➡️</div>
-                </div>
-                <div class="control-group">
                     <div class="touch-btn" id="btnJump">🦘</div>
                     <div class="touch-btn" id="btnAttack" style="font-size: 30px;">⚔️</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="touch-btn" id="btnLeft">⬅️</div>
+                    <div class="touch-btn" id="btnRight">➡️</div>
                 </div>
             </div>
 
         </div>
         <div id="instructions">
             電腦：⬅️➡️移動 | 空白鍵跳躍 | Z攻擊<br>
-            手機：使用螢幕按鈕遊玩
+            手機：左側(跳/攻) | 右側(移動)
         </div>
     </div>
 
@@ -524,11 +525,8 @@
             setTimeout(() => {
                 if (currentLevel < 3) {
                     currentLevel++;
-                    
-                    // *** 修改：過關時補滿血量 ***
                     player.hp = player.maxHp; 
                     updateUI(); 
-
                     alert(`通過第 ${currentLevel-1} 關！進入第 ${currentLevel} 關！(生命值已補滿)`);
                     setupLevel(currentLevel);
                 } else {
