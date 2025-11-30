@@ -2,27 +2,34 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Emoji 劍客冒險 v8 - 決戰范阿呆</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Emoji 劍客冒險 v15 - 最終優化版</title>
     <style>
         body {
             margin: 0;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             background-color: #222;
             color: white;
-            font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif; /* 強制微軟正黑體 */
+            font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif;
             overflow: hidden;
+            touch-action: none;
         }
         #gameContainer {
             position: relative;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            max-width: 100%; 
+            max-height: 100vh;
         }
         canvas {
             background-color: #87CEEB; /* 天空藍 */
             border-radius: 4px;
             display: block;
+            max-width: 100%;
+            height: auto;
         }
         #ui {
             position: absolute;
@@ -36,23 +43,116 @@
             border-radius: 5px;
             pointer-events: none;
         }
+        #levelInfo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+            background: #444;
+            padding: 5px 10px;
+            border-radius: 5px;
+            pointer-events: none;
+        }
         #instructions {
             margin-top: 10px;
             text-align: center;
             color: #aaa;
             font-size: 14px;
+            padding: 0 10px;
+        }
+        
+        /* --- 修改：重新開始按鈕位置 (畫面下方中間) --- */
+        #restartBtn {
+            position: absolute;
+            bottom: 80px; /* 距離底部 80px，避免跟觸控按鈕重疊(如果有) */
+            left: 50%;
+            transform: translateX(-50%); /* 水平置中 */
+            padding: 15px 40px;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            background-color: #4CAF50;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            display: none;
+            font-family: 'Microsoft JhengHei', sans-serif;
+            box-shadow: 0 5px #2E7D32;
+            transition: all 0.1s;
+            z-index: 100;
+        }
+        #restartBtn:hover { background-color: #45a049; }
+        #restartBtn:active {
+            box-shadow: 0 2px #2E7D32;
+            transform: translate(-50%, 2px);
+        }
+
+        /* 觸控按鈕 */
+        #touchControls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 50;
+        }
+        .control-group {
+            display: flex;
+            gap: 20px;
+            pointer-events: auto;
+        }
+        .touch-btn {
+            width: 65px;
+            height: 65px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            cursor: pointer;
+            backdrop-filter: blur(2px);
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        .touch-btn:active {
+            background: rgba(255, 255, 255, 0.7);
+            transform: scale(0.95);
         }
     </style>
 </head>
 <body>
 
-    <div>
+    <div id="gameWrapper">
         <div id="gameContainer">
             <canvas id="gameCanvas" width="800" height="400"></canvas>
             <div id="ui">HP: ❤️❤️❤️❤️❤️</div>
+            <div id="levelInfo">第 1 關</div>
+            <button id="restartBtn">🎮 重新開始</button>
+
+            <div id="touchControls">
+                <div class="control-group">
+                    <div class="touch-btn" id="btnLeft">⬅️</div>
+                    <div class="touch-btn" id="btnRight">➡️</div>
+                </div>
+                <div class="control-group">
+                    <div class="touch-btn" id="btnJump">🦘</div>
+                    <div class="touch-btn" id="btnAttack" style="font-size: 30px;">⚔️</div>
+                </div>
+            </div>
+
         </div>
         <div id="instructions">
-            ⬅️ ➡️ 移動(有慣性) | 空白鍵 跳躍 | Z 攻擊 | 終點：范阿呆
+            電腦：⬅️➡️移動 | 空白鍵跳躍 | Z攻擊<br>
+            手機：使用螢幕按鈕遊玩
         </div>
     </div>
 
@@ -60,27 +160,33 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const ui = document.getElementById('ui');
+    const levelInfo = document.getElementById('levelInfo');
+    const restartBtn = document.getElementById('restartBtn');
 
-    // --- 遊戲參數 ---
+    // --- 物理參數 ---
     const GRAVITY = 0.25;      
     const JUMP_STRENGTH = -10; 
     const ACCELERATION = 0.5; 
     const FRICTION = 0.9;     
     const MAX_SPEED = 8;      
-
     const ATTACK_DURATION = 40; 
-    const WORLD_WIDTH = 3400; // 地圖夠長才能放下一堆怪
-    const CANVAS_WIDTH = canvas.width;
+    const LOGICAL_CANVAS_WIDTH = 800; 
 
+    // --- 遊戲狀態變數 ---
+    let currentLevel = 1;
     let cameraX = 0;
-    let isGameOver = false;
+    let particles = []; 
+    let isGameWon = false;
+    let isLevelSwitching = false;
+    let isDead = false;
 
-    const keys = { ArrowRight: false, ArrowLeft: false, Space: false, z: false };
+    // 按鍵狀態
+    const keys = { ArrowRight: false, ArrowLeft: false, Space: false };
 
     // --- 角色 ---
     const player = {
         x: 50,
-        y: 100, // 玩家也從空中出生，比較安全
+        y: 100,
         width: 40,
         height: 40,
         vx: 0,
@@ -95,63 +201,103 @@
         emoji: '🤺'
     };
 
-    // --- 地圖平台 ---
-    const platforms = [
-        { x: 0, y: 350, w: 600, h: 50 },
-        { x: 700, y: 280, w: 100, h: 20 },
-        { x: 900, y: 220, w: 100, h: 20 },
-        { x: 1100, y: 350, w: 600, h: 50 }, 
-        // 困難跳躍區
-        { x: 1800, y: 280, w: 80, h: 20 },
-        { x: 2000, y: 200, w: 80, h: 20 },
-        { x: 2200, y: 150, w: 80, h: 20 },
-        { x: 2400, y: 250, w: 80, h: 20 },
-        // Boss 戰鬥舞台 (很大一片平地)
-        { x: 2600, y: 350, w: 800, h: 50 }, 
-        { x: 2800, y: 250, w: 50, h: 100 }, // 范阿呆前面的掩體
-    ];
+    let platforms = [];
+    let enemies = [];
+    let foods = [];
+    let exitDoor = {};
+    let worldWidth = 0;
 
-    const exitDoor = { x: 3200, y: 270, w: 60, h: 80, emoji: '🚪' };
+    function resetInput() {
+        keys.ArrowRight = false;
+        keys.ArrowLeft = false;
+        keys.Space = false;
+        player.vx = 0;
+        player.vy = 0;
+    }
 
-    // --- 怪物配置 (修正：所有地面怪出生在 Y=200 空中，確保不會卡地) ---
-    // 👾(普通), 🐍(快), 🧟(慢硬), 👻(飛), 👹(Boss)
-    let enemies = [
-        // 第一區
-        { x: 400, y: 200, w: 40, h: 40, vx: 2, vy: 0, hp: 1, maxHp: 1, type: '👾' },
-        { x: 500, y: 200, w: 40, h: 40, vx: 3, vy: 0, hp: 1, maxHp: 1, type: '🐍' },
+    // ==========================================
+    //              關卡設計
+    // ==========================================
+    function setupLevel(level) {
+        resetInput();
         
-        // 第二區 (地面怪較多)
-        { x: 1200, y: 200, w: 40, h: 40, vx: -1, vy: 0, hp: 3, maxHp: 3, type: '🧟' },
-        { x: 1400, y: 200, w: 40, h: 40, vx: 1, vy: 0, hp: 3, maxHp: 3, type: '🧟' },
-        { x: 1500, y: 200, w: 40, h: 40, vx: 3, vy: 0, hp: 1, maxHp: 1, type: '🐍' },
-        { x: 1600, y: 200, w: 40, h: 40, vx: 2, vy: 0, hp: 1, maxHp: 1, type: '👾' },
+        isLevelSwitching = false;
+        isDead = false;
+        isGameWon = false;
+        restartBtn.style.display = 'none'; 
 
-        // 空中部隊
-        { x: 800, y: 50, w: 40, h: 40, vx: 0, vy: 0, hp: 2, maxHp: 2, type: '👻', flying: true },
-        { x: 1900, y: 50, w: 40, h: 40, vx: 0, vy: 0, hp: 2, maxHp: 2, type: '👻', flying: true },
-        { x: 2300, y: 50, w: 40, h: 40, vx: 0, vy: 0, hp: 2, maxHp: 2, type: '👻', flying: true },
+        player.x = 50;
+        player.y = 100;
+        cameraX = 0;
 
-        // --- Boss 范阿呆 ---
-        { 
-            x: 3000, y: 200, // 從天而降的王者
-            w: 100, h: 100, // 更大隻
-            vx: 0, vy: 0, 
-            hp: 15, maxHp: 15, 
-            type: '👹', 
-            isBoss: true, 
-            name: "我是范阿呆"
+        levelInfo.innerText = `第 ${level} 關`;
+
+        if (level === 1) {
+            worldWidth = 1600;
+            platforms = [
+                { x: 0, y: 350, w: 1600, h: 50 }, 
+                { x: 400, y: 280, w: 100, h: 70 }, 
+                { x: 500, y: 210, w: 100, h: 140 },
+                { x: 900, y: 250, w: 200, h: 20 },
+            ];
+            enemies = [
+                { x: 600, y: 200, w: 40, h: 40, vx: 2, vy: 0, hp: 1, maxHp: 1, type: '👾' },
+                { x: 1000, y: 200, w: 40, h: 40, vx: 2, vy: 0, hp: 1, maxHp: 1, type: '👾' },
+                { x: 1200, y: 300, w: 40, h: 40, vx: 3, vy: 0, hp: 1, maxHp: 1, type: '🐍' }
+            ];
+            foods = [{ x: 950, y: 210, w: 30, h: 30, eaten: false, type: '🍖' }];
+            exitDoor = { x: 1450, y: 270, w: 60, h: 80, emoji: '🚪' };
+
+        } else if (level === 2) {
+            worldWidth = 2200;
+            platforms = [
+                { x: 0, y: 350, w: 600, h: 50 },
+                { x: 700, y: 300, w: 150, h: 20 }, 
+                { x: 950, y: 250, w: 150, h: 20 },
+                { x: 1200, y: 350, w: 1000, h: 50 }, 
+                { x: 1600, y: 250, w: 100, h: 20 }  
+            ];
+            enemies = [
+                { x: 800, y: 50, w: 40, h: 40, vx: 0, vy: 0, hp: 2, maxHp: 2, type: '👻', flying: true },
+                { x: 1000, y: 50, w: 40, h: 40, vx: 0, vy: 0, hp: 2, maxHp: 2, type: '👻', flying: true },
+                { x: 1300, y: 300, w: 40, h: 40, vx: 1, vy: 0, hp: 3, maxHp: 3, type: '🧟' }, 
+                { x: 1800, y: 200, w: 60, h: 60, vx: 0, vy: 0, hp: 5, maxHp: 5, type: '👹', isBoss: true, name: "來打我呀" }
+            ];
+            foods = [{ x: 1630, y: 210, w: 30, h: 30, eaten: false, type: '🍖' }];
+            exitDoor = { x: 2050, y: 270, w: 60, h: 80, emoji: '🚪' };
+
+        } else if (level === 3) {
+            worldWidth = 3000;
+            platforms = [
+                { x: 0, y: 350, w: 500, h: 50 },
+                { x: 600, y: 280, w: 100, h: 20 },
+                { x: 800, y: 220, w: 100, h: 20 },
+                { x: 1000, y: 160, w: 100, h: 20 },
+                { x: 1200, y: 300, w: 100, h: 20 }, 
+                { x: 1400, y: 350, w: 1600, h: 50 }, 
+                { x: 2000, y: 250, w: 50, h: 100 }, 
+            ];
+            enemies = [];
+            for(let i=0; i<4; i++) {
+                enemies.push({ x: 600 + i*250, y: 50, w: 40, h: 40, vx: 0, vy: 0, hp: 2, maxHp: 2, type: '👻', flying: true });
+            }
+            enemies.push({ x: 1500, y: 300, w: 40, h: 40, vx: 2, vy: 0, hp: 3, maxHp: 3, type: '🧟' });
+            enemies.push({ x: 1700, y: 300, w: 40, h: 40, vx: 4, vy: 0, hp: 1, maxHp: 1, type: '🐍' });
+            enemies.push({ x: 2600, y: 200, w: 100, h: 100, vx: 0, vy: 0, hp: 10, maxHp: 10, type: '👹', isBoss: true, name: "范阿呆" });
+
+            foods = [
+                { x: 1030, y: 120, w: 30, h: 30, eaten: false, type: '🍖' },
+                { x: 1900, y: 310, w: 30, h: 30, eaten: false, type: '🍖' }
+            ];
+            exitDoor = { x: 2900, y: 270, w: 60, h: 80, emoji: '🚪' };
         }
-    ];
+        enemies.forEach(e => e.hurtTimer = 0);
+    }
 
-    enemies.forEach(e => e.hurtTimer = 0);
+    // ==========================================
+    //              輸入控制 (鍵盤 + 觸控)
+    // ==========================================
 
-    let foods = [
-        { x: 930, y: 180, w: 30, h: 30, eaten: false, type: '🍖' },
-        { x: 2100, y: 110, w: 30, h: 30, eaten: false, type: '🍖' },
-        { x: 2700, y: 310, w: 30, h: 30, eaten: false, type: '🍖' }
-    ];
-
-    // 按鍵監聽
     window.addEventListener('keydown', (e) => {
         if(e.code === 'Space') keys.Space = true;
         if(e.code === 'ArrowRight') keys.ArrowRight = true;
@@ -164,17 +310,67 @@
         if(e.code === 'ArrowLeft') keys.ArrowLeft = false;
     });
 
+    function bindTouchControl(elementId, keyName, isAttack = false) {
+        const elem = document.getElementById(elementId);
+        
+        elem.addEventListener('touchstart', (e) => {
+            e.preventDefault(); 
+            if (isAttack) {
+                if (!player.attacking) startAttack();
+            } else {
+                keys[keyName] = true;
+            }
+        }, { passive: false });
+
+        if (!isAttack) { 
+            elem.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                keys[keyName] = false;
+            }, { passive: false });
+        }
+        
+        elem.addEventListener('mousedown', (e) => {
+             e.preventDefault();
+             if (isAttack) { if (!player.attacking) startAttack(); } else { keys[keyName] = true; }
+        });
+        if (!isAttack) {
+             elem.addEventListener('mouseup', (e) => { e.preventDefault(); keys[keyName] = false; });
+        }
+    }
+
+    bindTouchControl('btnLeft', 'ArrowLeft');
+    bindTouchControl('btnRight', 'ArrowRight');
+    bindTouchControl('btnJump', 'Space');
+    bindTouchControl('btnAttack', '', true); 
+
+    restartBtn.addEventListener('click', () => {
+        currentLevel = 1;
+        player.hp = player.maxHp;
+        particles = [];
+        setupLevel(1);
+        updateUI();
+    });
+
     function startAttack() {
         player.attacking = true;
         player.attackTimer = ATTACK_DURATION;
     }
 
-    // --- 遊戲邏輯 ---
     function update() {
-        if (isGameOver) return; 
+        if (isGameWon) {
+            updateVictoryParticles();
+            return;
+        }
 
         if (player.hp <= 0) {
-            endGame("挑戰失敗！按確定重新開始");
+            if (isDead) return;
+            isDead = true;
+            setTimeout(() => {
+                alert("你倒下了... 重新挑戰本關！");
+                setupLevel(currentLevel);
+                player.hp = 5;
+                updateUI();
+            }, 50);
             return;
         }
 
@@ -196,24 +392,25 @@
             player.grounded = false;
         }
 
-        // 玩家碰撞
         player.grounded = false; 
         platforms.forEach(p => checkPlatformCollision(player, p));
 
         // 邊界
         if (player.x < 0) { player.x = 0; player.vx = 0; }
-        if (player.x + player.width > WORLD_WIDTH) { player.x = WORLD_WIDTH - player.width; player.vx = 0; }
-        if (player.y > canvas.height + 200) player.hp = 0; // 掉落死亡
+        if (player.x + player.width > worldWidth) { player.x = worldWidth - player.width; player.vx = 0; }
+        if (player.y > canvas.height + 200) {
+            player.hp = 0; 
+        }
 
         // 2. 攝影機
-        cameraX = player.x - CANVAS_WIDTH / 2;
+        cameraX = player.x - LOGICAL_CANVAS_WIDTH / 2;
         if (cameraX < 0) cameraX = 0;
-        if (cameraX > WORLD_WIDTH - CANVAS_WIDTH) cameraX = WORLD_WIDTH - CANVAS_WIDTH;
+        if (cameraX > worldWidth - LOGICAL_CANVAS_WIDTH) cameraX = worldWidth - LOGICAL_CANVAS_WIDTH;
 
         // 3. 攻擊
         if (player.attacking) {
             player.attackTimer--;
-            const attackRange = 80; // 加大攻擊範圍
+            const attackRange = 80; 
             const hitX = player.facingRight ? player.x + player.width : player.x - attackRange;
             
             for (let i = enemies.length - 1; i >= 0; i--) {
@@ -223,7 +420,6 @@
                 if (rectIntersect(hitX, player.y, attackRange, player.height, enemy.x, enemy.y, enemy.w, enemy.h)) {
                     enemy.hp--;
                     enemy.hurtTimer = 15;
-                    // 擊退
                     let kX = enemy.isBoss ? 2 : 8;
                     let kY = enemy.isBoss ? -2 : -5;
                     enemy.vx = (enemy.x > player.x) ? kX : -kX;
@@ -242,9 +438,7 @@
                 enemy.vy += GRAVITY;
                 enemy.vx *= 0.9;
             } else {
-                // AI 行為
                 if (enemy.flying) {
-                    // 鬼魂追蹤
                     const dx = player.x - enemy.x;
                     const dy = player.y - enemy.y;
                     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -255,9 +449,7 @@
                         enemy.vx = 0; enemy.vy = 0;
                     }
                 } else {
-                    // 地面怪物
                     if (enemy.isBoss) {
-                        // Boss 邏輯: 玩家靠近時才移動
                         if (Math.abs(player.x - enemy.x) < 500) {
                             let speed = 1.0;
                             enemy.vx = player.x > enemy.x ? speed : -speed;
@@ -265,9 +457,8 @@
                             enemy.vx = 0;
                         }
                     } else {
-                        // 一般怪巡邏
                         let speed = (enemy.type === '🐍') ? 4 : (enemy.type === '🧟' ? 0.5 : 2);
-                        if (Math.abs(enemy.vx) < 0.1) enemy.vx = speed; // 確保有初速
+                        if (Math.abs(enemy.vx) < 0.1) enemy.vx = speed; 
                         if (enemy.vx > 0) enemy.vx = speed; else enemy.vx = -speed;
                     }
                     enemy.vy += GRAVITY;
@@ -277,15 +468,12 @@
             enemy.x += enemy.vx;
             enemy.y += enemy.vy;
 
-            // 怪物碰撞地形
             let enemyGrounded = false;
             if (!enemy.flying) {
                 platforms.forEach(p => {
-                    // 使用簡化版的碰撞給怪物，避免卡牆
                     if (enemy.x + enemy.w > p.x && enemy.x < p.x + p.w &&
                         enemy.y + enemy.h > p.y && enemy.y + enemy.h < p.y + p.h + 10 &&
                         enemy.vy >= 0) {
-                        
                         enemy.y = p.y - enemy.h;
                         enemy.vy = 0;
                         enemyGrounded = true;
@@ -293,30 +481,21 @@
                 });
             }
 
-            // 懸崖勒馬 (修正：使用容錯判定)
             if (!enemy.flying && enemyGrounded && enemy.hurtTimer === 0 && !enemy.isBoss) {
                 let checkX = enemy.x + (enemy.vx > 0 ? enemy.w + 10 : -10);
                 let groundAhead = false;
-                
                 platforms.forEach(p => {
-                    // 只要檢查點在平台 X 範圍內，且平台 Y 接近怪物腳下
                     if (checkX > p.x && checkX < p.x + p.w && Math.abs((enemy.y + enemy.h) - p.y) < 5) {
                         groundAhead = true;
                     }
                 });
-
-                if (!groundAhead || enemy.x <= 0 || enemy.x + enemy.w >= WORLD_WIDTH) {
-                    enemy.vx *= -1; // 回頭
+                if (!groundAhead || enemy.x <= 0 || enemy.x + enemy.w >= worldWidth) {
+                    enemy.vx *= -1; 
                 }
             }
             
-            // Boss 強制邊界 (防止 Boss 掉下去)
-            if (enemy.isBoss && enemy.y > canvas.height) {
-                enemy.y = 200; // 掉下去就傳送回來
-                enemy.vy = 0;
-            }
+            if (enemy.isBoss && enemy.y > canvas.height) { enemy.y = 200; enemy.vy = 0; }
 
-            // 傷害判定
             if (enemy.hurtTimer === 0 && rectIntersect(player.x, player.y, player.width, player.height, enemy.x, enemy.y, enemy.w, enemy.h)) {
                 if (player.invulnerable <= 0) {
                     player.hp--;
@@ -337,17 +516,32 @@
             }
         });
 
-        // 勝利
+        // 5. 過關判定
         if (rectIntersect(player.x, player.y, player.width, player.height, exitDoor.x, exitDoor.y, exitDoor.w, exitDoor.h)) {
-            endGame("恭喜！你打敗了范阿呆（或繞過了他），成功過關！🎉");
+            if (isLevelSwitching) return;
+            isLevelSwitching = true;
+
+            setTimeout(() => {
+                if (currentLevel < 3) {
+                    currentLevel++;
+                    
+                    // *** 修改：過關時補滿血量 ***
+                    player.hp = player.maxHp; 
+                    updateUI(); 
+
+                    alert(`通過第 ${currentLevel-1} 關！進入第 ${currentLevel} 關！(生命值已補滿)`);
+                    setupLevel(currentLevel);
+                } else {
+                    startVictoryAnimation();
+                }
+            }, 10);
+            player.x -= 10; 
         }
         
         if (player.invulnerable > 0) player.invulnerable--;
     }
 
-    // 玩家專用的碰撞檢測 (包含側向阻擋)
     function checkPlatformCollision(obj, p) {
-        // 腳底碰撞
         if (obj.x + obj.width > p.x + 5 && 
             obj.x < p.x + p.w - 5 &&
             obj.y + obj.height > p.y &&
@@ -359,7 +553,6 @@
             obj.grounded = true; 
             return;
         }
-        // 側向碰撞 (只對玩家生效)
         if (obj.y + obj.height > p.y + 10 && obj.y < p.y + p.h) {
              if (obj.x + obj.width > p.x && obj.x < p.x + p.w) {
                  if(obj.vx > 0) obj.x = p.x - obj.width;
@@ -373,56 +566,105 @@
         return x2 < x1 + w1 && x2 + w2 > x1 && y2 < y1 + h1 && y2 + h2 > y1;
     }
 
+    function startVictoryAnimation() {
+        if (isGameWon) return; 
+        isGameWon = true;
+        resetInput(); 
+        
+        for(let i=0; i<100; i++) {
+            particles.push({
+                x: LOGICAL_CANVAS_WIDTH/2,
+                y: canvas.height/2,
+                vx: (Math.random() - 0.5) * 15,
+                vy: (Math.random() - 0.5) * 15,
+                emoji: ['🎉', '✨', '🏆', '⭐'][Math.floor(Math.random()*4)],
+                life: 100 + Math.random() * 100
+            });
+        }
+        restartBtn.style.display = 'block';
+    }
+
+    function updateVictoryParticles() {
+        particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.1; // 重力
+            p.life--;
+        });
+    }
+
+    function drawVictoryScreen() {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFD700'; 
+        ctx.font = 'bold 60px "Microsoft JhengHei"';
+        ctx.fillText("恭喜過關！", LOGICAL_CANVAS_WIDTH/2, canvas.height/2 - 20);
+        ctx.fillStyle = 'white';
+        ctx.font = '24px "Microsoft JhengHei"';
+        ctx.fillText("你打敗了范阿呆，", LOGICAL_CANVAS_WIDTH/2, canvas.height/2 + 30);
+        ctx.fillText("成為了真正的英雄！", LOGICAL_CANVAS_WIDTH/2, canvas.height/2 + 60);
+
+        particles.forEach(p => {
+            if(p.life > 0) {
+                ctx.font = '20px Arial';
+                ctx.fillText(p.emoji, p.x, p.y);
+            }
+        });
+    }
+
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (isGameWon) {
+            drawVictoryScreen();
+            return;
+        }
+
         ctx.save();
         ctx.translate(-cameraX, 0);
 
-        // 門
         ctx.font = '80px Arial';
         ctx.fillText(exitDoor.emoji, exitDoor.x, exitDoor.y + exitDoor.h - 10);
 
-        // 平台
         platforms.forEach(p => {
             ctx.fillStyle = '#5D4037'; ctx.fillRect(p.x, p.y, p.w, p.h);
             ctx.fillStyle = '#388E3C'; ctx.fillRect(p.x, p.y, p.w, 8);
         });
 
-        // 食物
         ctx.font = '30px Arial'; ctx.textAlign = 'center';
         foods.forEach(f => ctx.fillText(f.type, f.x + f.w/2, f.y + f.h - 5));
 
-        // 怪物
         enemies.forEach(e => {
             ctx.save();
             ctx.translate(e.x + e.w/2, e.y + e.h/2);
             if(e.hurtTimer > 0 && Math.floor(Date.now()/50)%2) ctx.globalAlpha = 0.3;
             if (!e.flying && e.vx > 0) ctx.scale(-1, 1); 
             
-            let fontSize = e.isBoss ? 80 : 30;
+            let fontSize = e.isBoss ? (e.name === '范阿呆' ? 80 : 60) : 30;
             ctx.font = `${fontSize}px Arial`;
             ctx.textAlign = 'center';
             ctx.fillText(e.type, 0, e.isBoss ? 30 : 10);
 
-            // Boss 名字
             if (e.isBoss) {
-                ctx.font = 'bold 24px "Microsoft JhengHei"';
+                ctx.font = 'bold 20px "Microsoft JhengHei"';
                 ctx.fillStyle = 'yellow';
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 3;
-                ctx.strokeText(e.name, 0, -60);
-                ctx.fillText(e.name, 0, -60);
+                let nameY = e.name === '范阿呆' ? -60 : -40;
+                ctx.strokeText(e.name, 0, nameY);
+                ctx.fillText(e.name, 0, nameY);
                 
-                // Boss 血條
+                let barY = e.name === '范阿呆' ? -50 : -30;
                 ctx.fillStyle = 'red';
-                ctx.fillRect(-50, -50, 100, 10);
+                ctx.fillRect(-40, barY, 80, 8);
                 ctx.fillStyle = '#0f0';
-                ctx.fillRect(-50, -50, 100 * (e.hp/e.maxHp), 10);
+                ctx.fillRect(-40, barY, 80 * (e.hp/e.maxHp), 8);
             }
             ctx.restore();
         });
 
-        // 玩家
         ctx.save();
         ctx.translate(player.x + player.width/2, player.y + player.height/2);
         if (player.invulnerable > 0 && Math.floor(Date.now() / 100) % 2 === 0) ctx.globalAlpha = 0.5;
@@ -445,18 +687,13 @@
         ui.innerHTML = `HP: ${hearts}`;
     }
 
-    function endGame(msg) {
-        if (isGameOver) return; 
-        isGameOver = true;
-        setTimeout(() => { alert(msg); location.reload(); }, 50);
-    }
-
     function loop() {
         update();
         draw();
         requestAnimationFrame(loop);
     }
 
+    setupLevel(1);
     updateUI();
     loop();
 
